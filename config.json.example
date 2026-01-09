@@ -1,0 +1,8 @@
+{
+  "proxies": {},
+  "chat_id": "",
+  "topic_id": "",
+  "bot_token": "",
+  "sleep": 300,
+  "feed": "https://nekobt.to/api/v1/torrents/search"
+}
