@@ -68,8 +68,9 @@ type Data struct {
 }
 
 type Feed struct {
-	Error bool  `json:"error"`
-	Data  *Data `json:"data"`
+	Error   bool    `json:"error"`
+	Message *string `json:"message"`
+	Data    *Data   `json:"data"`
 }
 
 const telegramAPI = "https://api.telegram.org/bot%s/sendMessage"
@@ -208,22 +209,37 @@ func getFeed(mainConfig MainConfig) (Feed, error) {
 	}
 
 	req.Header = fhttp.Header{
-		"accept":     {"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"},
+		"accept":     {"application/json, text/plain, */*"},
 		"user-agent": {"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0"},
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return feed, err
+	retries := 0
+	maxRetries := 5
+	for {
+		resp, err := client.Do(req)
+		if err != nil {
+			if retries < maxRetries {
+				log.Printf("Retrying (%d/%d)...", retries, maxRetries)
+
+				waitTime := time.Duration(retries*retries) * time.Second
+				log.Printf("Waiting %v before retrying...", waitTime)
+				time.Sleep(waitTime)
+
+				continue
+			}
+			return Feed{}, fmt.Errorf("[ERROR]: Max retries reached, %s", err.Error())
+		}
+
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&feed); err != nil {
+			return feed, fmt.Errorf("failed to decode JSON: %w", err)
+		}
+
+		return feed, nil
 	}
-
-	defer resp.Body.Close()
-
-	if err := json.NewDecoder(resp.Body).Decode(&feed); err != nil {
-		return feed, err
-	}
-
-	return feed, nil
 }
 
 func main() {
@@ -246,6 +262,7 @@ func main() {
 	for {
 		feed, err := getFeed(mainConfig)
 		if err != nil {
+			log.Println("[ERROR] ", err)
 			if errors.Is(err, context.DeadlineExceeded) {
 				log.Println("[ERROR] ", err)
 				time.Sleep(time.Duration(mainConfig.Sleep*2) * time.Second)
@@ -255,38 +272,42 @@ func main() {
 			}
 		}
 
-		if feed.Error {
-
-		}
-
-		var CleanItems []Item
-		for _, item := range feed.Data.Items {
-			if slices.Contains(CacheFile.LastUrls, item.ID) {
-				break
+		if !feed.Error {
+			var CleanItems []Item
+			for _, item := range feed.Data.Items {
+				if slices.Contains(CacheFile.LastUrls, item.ID) {
+					break
+				}
+				CleanItems = append(CleanItems, item)
 			}
-			CleanItems = append(CleanItems, item)
-		}
 
-		for i := len(CleanItems) - 1; i >= 0; i-- {
-			post(
-				fmt.Sprintf(
-					"\n<b>%v</b>\n\n- <b>Size</b>: %v\n- <b>Sub level</b>: %d\n- <b>Link</b>: <a href=\"https://nekobt.to/torrents/%v\">View site</a> | <a href=\"https://nekobt.to/api/v1/torrents/%v/download?public=true\">Torrent file</a>",
-					CleanItems[i].Title,
-					CleanItems[i].HumanSize(),
-					CleanItems[i].SubLevel,
-					CleanItems[i].ID,
-					CleanItems[i].ID,
-				),
-				mainConfig.ChatId,
-				mainConfig.BotToken,
-				mainConfig.TopicId,
-			)
-			log.Println("Title: ", CleanItems[i].Title)
-			CacheFile.LastUrls = append(CacheFile.LastUrls, CleanItems[i].ID)
-			if err := writeCache("cache.json", CacheFile); err != nil {
-				log.Println("[ERROR] ", err)
-				continue
+			for i := len(CleanItems) - 1; i >= 0; i-- {
+				post(
+					fmt.Sprintf(
+						"\n<b>%v</b>\n\n- <b>Size</b>: %v\n- <b>Sub level</b>: %d\n- <b>Link</b>: <a href=\"https://nekobt.to/torrents/%v\">View site</a> | <a href=\"https://nekobt.to/api/v1/torrents/%v/download?public=true\">Torrent file</a>",
+						CleanItems[i].Title,
+						CleanItems[i].HumanSize(),
+						CleanItems[i].SubLevel,
+						CleanItems[i].ID,
+						CleanItems[i].ID,
+					),
+					mainConfig.ChatId,
+					mainConfig.BotToken,
+					mainConfig.TopicId,
+				)
+				log.Println("Title: ", CleanItems[i].Title)
+				CacheFile.LastUrls = append(CacheFile.LastUrls, CleanItems[i].ID)
+				if err := writeCache("cache.json", CacheFile); err != nil {
+					log.Println("[ERROR] ", err)
+					continue
+				}
 			}
+		} else if feed.Message != nil {
+			log.Println("[ERROR] ", feed.Message)
+			time.Sleep(time.Duration(mainConfig.Sleep*5) * time.Second)
+		} else {
+			log.Println("[ERROR] Unkonw problem")
+			time.Sleep(time.Duration(mainConfig.Sleep*5) * time.Second)
 		}
 
 		time.Sleep(time.Duration(mainConfig.Sleep*2) * time.Second)
