@@ -73,25 +73,46 @@ type Feed struct {
 	Data    *Data   `json:"data"`
 }
 
+type InlineKeyboardButton struct {
+	Text         string `json:"text"`
+	URL          string `json:"url,omitempty"`
+	CallbackData string `json:"callback_data,omitempty"`
+}
+
+type InlineKeyboardMarkup struct {
+	InlineKeyboard [][]InlineKeyboardButton `json:"inline_keyboard"`
+}
+
 const telegramAPI = "https://api.telegram.org/bot%s/sendMessage"
 
-func post(message, chatID, token, topicID string) {
+func post(message, chatID, token, topicID string, buttons [][]InlineKeyboardButton) {
 	log := log.New(os.Stdout, "tg: ", log.LstdFlags)
 
 	if message != "" {
 		retries := 0
 		maxRetries := 5
 
+		params := url.Values{}
+		params.Set("text", message)
+		params.Set("chat_id", chatID)
+		if topicID != "" {
+			params.Set("message_thread_id", topicID)
+		}
+		params.Set("parse_mode", "html")
+		params.Set("disable_web_page_preview", "true")
+
+		if len(buttons) > 0 {
+			markup := InlineKeyboardMarkup{InlineKeyboard: buttons}
+			markupJSON, err := json.Marshal(markup)
+			if err != nil {
+				log.Printf("Error marshaling buttons: %v", err)
+			} else {
+				params.Set("reply_markup", string(markupJSON))
+			}
+		}
+
 		for retries < maxRetries {
 			baseURL := fmt.Sprintf(telegramAPI, token)
-			params := url.Values{}
-			params.Set("text", message)
-			params.Set("chat_id", chatID)
-			if topicID != "" {
-				params.Set("message_thread_id", topicID)
-			}
-			params.Set("parse_mode", "html")
-			params.Set("disable_web_page_preview", "true")
 
 			req, err := http.NewRequest("POST", baseURL, strings.NewReader(params.Encode()))
 			if err != nil {
@@ -284,16 +305,20 @@ func main() {
 			for i := len(CleanItems) - 1; i >= 0; i-- {
 				post(
 					fmt.Sprintf(
-						"\n<b>%v</b>\n\n- <b>Size</b>: %v\n- <b>Sub level</b>: %d\n- <b>Link</b>: <a href=\"https://nekobt.to/torrents/%v\">View site</a> | <a href=\"https://nekobt.to/api/v1/torrents/%v/download?public=true\">Torrent file</a>",
+						"\n<b>%v</b>\n\n- <b>Size</b>: %v\n- <b>Sub level</b>: %d",
 						CleanItems[i].Title,
 						CleanItems[i].HumanSize(),
 						CleanItems[i].SubLevel,
-						CleanItems[i].ID,
-						CleanItems[i].ID,
 					),
 					mainConfig.ChatId,
 					mainConfig.BotToken,
 					mainConfig.TopicId,
+					[][]InlineKeyboardButton{
+						{
+							{Text: "🔗 View site", URL: fmt.Sprintf("https://nekobt.to/torrents/%v", CleanItems[i].ID)},
+							{Text: "📥 Torrent file", URL: fmt.Sprintf("https://nekobt.to/api/v1/torrents/%v/download?public=true", CleanItems[i].ID)},
+						},
+					},
 				)
 				log.Println("Title: ", CleanItems[i].Title)
 				CacheFile.LastUrls = append(CacheFile.LastUrls, CleanItems[i].ID)
