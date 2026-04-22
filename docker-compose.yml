@@ -1,0 +1,9 @@
+services:
+  nekobt_notification:
+    build: .
+    image: nekobt_notification:latest
+    container_name: nekobt_notification
+    volumes:
+      - ./config.json:/app/config.json
+      - ./cache.json:/app/cache.json
+    restart: unless-stopped
