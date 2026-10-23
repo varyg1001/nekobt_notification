@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -117,7 +115,7 @@ func post(message, chatID, token, topicID string, buttons [][]InlineKeyboardButt
 			req, err := http.NewRequest("POST", baseURL, strings.NewReader(params.Encode()))
 			if err != nil {
 				log.Printf("Error creating request: %v", err)
-				continue
+				return
 			}
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -202,6 +200,8 @@ func getMainConfig(filename string) (MainConfig, error) {
 		err = fmt.Errorf("error parsing config file: %w", err)
 		return config, err
 	}
+	// A missing or zero sleep would turn the poll loop into a busy loop.
+	config.Sleep = max(config.Sleep, 30)
 	return config, nil
 }
 
@@ -239,6 +239,7 @@ func getFeed(mainConfig MainConfig) (Feed, error) {
 	for {
 		resp, err := client.Do(req)
 		if err != nil {
+			retries++
 			if retries < maxRetries {
 				log.Printf("Retrying (%d/%d)...", retries, maxRetries)
 
@@ -251,11 +252,9 @@ func getFeed(mainConfig MainConfig) (Feed, error) {
 			return Feed{}, fmt.Errorf("[ERROR]: Max retries reached, %s", err.Error())
 		}
 
-		if resp != nil {
-			defer resp.Body.Close()
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&feed); err != nil {
+		err = json.NewDecoder(resp.Body).Decode(&feed)
+		resp.Body.Close()
+		if err != nil {
 			return feed, fmt.Errorf("failed to decode JSON: %w", err)
 		}
 
@@ -284,13 +283,8 @@ func main() {
 		feed, err := getFeed(mainConfig)
 		if err != nil {
 			log.Println("[ERROR] ", err)
-			if errors.Is(err, context.DeadlineExceeded) {
-				log.Println("[ERROR] ", err)
-				time.Sleep(time.Duration(mainConfig.Sleep*2) * time.Second)
-				continue
-			} else {
-				log.Println("[ERROR] ", err)
-			}
+			time.Sleep(time.Duration(mainConfig.Sleep*2) * time.Second)
+			continue
 		}
 
 		if !feed.Error {
