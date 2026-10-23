@@ -6,7 +6,7 @@ Just a simple project to send notifications to a telegram group from nekoBT feed
 
 Since the tool is written in Go, it should be rather trivial.
 
-1. Ensure that you have Go installed on your system. You can download it from [here](https://golang.org/dl/). At least Go 1.23.1 is required.
+1. Ensure that you have Go installed on your system. You can download it from [here](https://golang.org/dl/). At least Go 1.27 is required.
 2. Clone this repository and switch to the project's root directory
 3. Build the project:
 
@@ -59,19 +59,19 @@ docker run -d \
 
 ## Usage
 
-Both `config.json` and `cache.json` have to be created, there is example files.
+Both `config.json` and `cache.json` have to be created; example files are provided.
 
 ### Config
 
 The config file is `config.json`
 
-- `proxies`: proxy for requesting rss feed, could be needed (ie. `"us": "http://proxy.example.com:8080/"`)
+- `proxies`: proxy for requesting the feed, could be needed (ie. `"us": "http://proxy.example.com:8080/"`)
 - `chat_id`: ID for the group
 - `topic_id`: topic ID if Topics is enabled in the group
 - `bot_token`: token for the bot
-- `sleep`: time to sleep between each request (in second)
-- `rss_feed`: url for the feed ie. https://nekobt.to/api/v1/torrents/search?group_id=7313765950000
+- `sleep`: time to sleep between each request in seconds (minimum 30 seconds)
+- `feed`: url for the feed (e.g. `https://nekobt.to/api/v1/torrents/search?group_id=7313765950000`)
 
 ### Cache
 
-Items that was already done is in `cache.json`. So can be set where to start. If `cache.json` not mounted with docker, then before ever new run have to update it.
+Items that were already processed are in `cache.json`. So it can be set where to start. If `cache.json` is not mounted with docker, it will need to be updated before each new run.
